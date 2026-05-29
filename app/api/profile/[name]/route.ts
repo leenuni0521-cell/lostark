@@ -18,6 +18,7 @@ export async function GET(
       className: profile.CharacterClassName,
       level: profile.CharacterLevel,
       itemLevel: profile.ItemMaxLevel || profile.ItemAvgLevel || null,
+      combatPower: profile.CombatPower ?? null,
       image: profile.CharacterImage,
     });
   } catch (err) {

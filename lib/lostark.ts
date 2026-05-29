@@ -108,6 +108,7 @@ export interface ArmoryProfile {
   CharacterClassName: string;
   ItemAvgLevel: string;
   ItemMaxLevel: string;
+  CombatPower: string | null;
   Stats: { Type: string; Value: string; Tooltip: string[] }[] | null;
 }
 
