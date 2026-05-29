@@ -2,27 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { parseItemLevel, type Sibling } from "@/lib/lostark";
-import {
-  DAILY_TASKS,
-  WEEKLY_TASKS,
-  ACCOUNT_WEEKLY_TASKS,
-} from "@/lib/tasks";
-import {
-  dailyPeriodKey,
-  weeklyPeriodKey,
-  timeUntilDailyReset,
-} from "@/lib/reset";
+import { DAILY_TASKS, WEEKLY_TASKS, ACCOUNT_WEEKLY_TASKS } from "@/lib/tasks";
+import { RAIDS, gateTaskId } from "@/lib/raids";
+import { dailyPeriodKey, weeklyPeriodKey, timeUntilDailyReset } from "@/lib/reset";
 
 interface CharInfo {
   name: string;
   server?: string;
   className?: string;
-  itemLevel?: string;
+  itemLevel?: string | null;
+  image?: string | null;
 }
 
-// taskId -> boolean
 type TaskMap = Record<string, boolean>;
-// charName -> TaskMap
 type ScopeMap = Record<string, TaskMap>;
 
 interface PeriodState {
@@ -41,13 +33,35 @@ function loadPeriod(key: string, currentPeriod: string): PeriodState {
     const raw = localStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw) as PeriodState;
-      // 기간이 바뀌었으면 초기화 (자동 리셋)
-      if (parsed.period === currentPeriod) return parsed;
+      if (parsed.period === currentPeriod) return parsed; // 기간 같으면 유지
     }
   } catch {
     /* ignore */
   }
-  return { period: currentPeriod, data: {} };
+  return { period: currentPeriod, data: {} }; // 기간 바뀌면 자동 리셋
+}
+
+/** 캐릭터들의 프로필 이미지를 병렬로 채워온다 */
+async function fetchProfiles(names: string[]): Promise<Map<string, Partial<CharInfo>>> {
+  const result = new Map<string, Partial<CharInfo>>();
+  await Promise.all(
+    names.map(async (n) => {
+      try {
+        const res = await fetch(`/api/profile/${encodeURIComponent(n)}`);
+        if (!res.ok) return;
+        const p = await res.json();
+        result.set(n, {
+          image: p.image ?? null,
+          className: p.className,
+          itemLevel: p.itemLevel,
+          server: p.server,
+        });
+      } catch {
+        /* ignore individual failures */
+      }
+    }),
+  );
+  return result;
 }
 
 export default function HomeworkPage() {
@@ -60,25 +74,21 @@ export default function HomeworkPage() {
   const [resetIn, setResetIn] = useState("");
   const [ready, setReady] = useState(false);
 
-  // 초기 로드
   useEffect(() => {
-    const dp = dailyPeriodKey();
-    const wp = weeklyPeriodKey();
     try {
       const rawChars = localStorage.getItem(CHARS_KEY);
       if (rawChars) setChars(JSON.parse(rawChars));
     } catch {
       /* ignore */
     }
-    setDaily(loadPeriod(DAILY_KEY, dp));
-    setWeekly(loadPeriod(WEEKLY_KEY, wp));
+    setDaily(loadPeriod(DAILY_KEY, dailyPeriodKey()));
+    setWeekly(loadPeriod(WEEKLY_KEY, weeklyPeriodKey()));
     setResetIn(timeUntilDailyReset());
     setReady(true);
     const t = setInterval(() => setResetIn(timeUntilDailyReset()), 60000);
     return () => clearInterval(t);
   }, []);
 
-  // 저장
   useEffect(() => {
     if (ready) localStorage.setItem(CHARS_KEY, JSON.stringify(chars));
   }, [chars, ready]);
@@ -89,13 +99,16 @@ export default function HomeworkPage() {
     if (ready) localStorage.setItem(WEEKLY_KEY, JSON.stringify(weekly));
   }, [weekly, ready]);
 
-  function addManual() {
+  async function addManual() {
     const name = input.trim();
     if (!name) return;
-    if (!chars.some((c) => c.name === name)) {
-      setChars((prev) => [...prev, { name }]);
-    }
     setInput("");
+    if (chars.some((c) => c.name === name)) return;
+    setChars((prev) => [...prev, { name }]);
+    // 프로필 이미지 채우기
+    const profiles = await fetchProfiles([name]);
+    const p = profiles.get(name);
+    if (p) setChars((prev) => prev.map((c) => (c.name === name ? { ...c, ...p } : c)));
   }
 
   async function importExpedition() {
@@ -117,13 +130,25 @@ export default function HomeworkPage() {
         className: c.CharacterClassName,
         itemLevel: c.ItemMaxLevel,
       }));
-      // 기존 + 신규 병합 (중복 제거)
+
+      // 기존 + 신규 병합
       setChars((prev) => {
         const map = new Map(prev.map((c) => [c.name, c]));
-        for (const c of imported) map.set(c.name, c);
+        for (const c of imported) map.set(c.name, { ...map.get(c.name), ...c });
         return Array.from(map.values());
       });
       setInput("");
+
+      // 이미지 병렬 로딩 (실패는 무시)
+      const profiles = await fetchProfiles(imported.map((c) => c.name));
+      if (profiles.size > 0) {
+        setChars((prev) =>
+          prev.map((c) => {
+            const p = profiles.get(c.name);
+            return p ? { ...c, ...p } : c;
+          }),
+        );
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "오류가 발생했습니다.");
     } finally {
@@ -142,31 +167,32 @@ export default function HomeworkPage() {
     taskId: string,
   ) {
     const scopeData = state.data[scope] ?? {};
-    const next: PeriodState = {
+    setState({
       period: state.period,
-      data: {
-        ...state.data,
-        [scope]: { ...scopeData, [taskId]: !scopeData[taskId] },
-      },
-    };
-    setState(next);
+      data: { ...state.data, [scope]: { ...scopeData, [taskId]: !scopeData[taskId] } },
+    });
   }
 
   const isDone = (state: PeriodState, scope: string, taskId: string) =>
     Boolean(state.data[scope]?.[taskId]);
 
-  // 진행도 계산
-  function charProgress(name: string) {
-    const total = DAILY_TASKS.length + WEEKLY_TASKS.length;
-    let done = 0;
-    for (const t of DAILY_TASKS) if (isDone(daily, name, t.id)) done++;
-    for (const t of WEEKLY_TASKS) if (isDone(weekly, name, t.id)) done++;
-    return { done, total };
+  // 캐릭터 주간 골드 (체크된 레이드 관문 합산)
+  function raidGold(name: string) {
+    let earned = 0;
+    let total = 0;
+    for (const raid of RAIDS) {
+      raid.gates.forEach((g, i) => {
+        total += g.gold;
+        if (isDone(weekly, name, gateTaskId(raid.id, i))) earned += g.gold;
+      });
+    }
+    return { earned, total };
   }
 
-  if (!ready) {
-    return <div className="text-gray-400">불러오는 중...</div>;
-  }
+  // 전체 원정대 주간 골드 합
+  const totalGold = chars.reduce((sum, c) => sum + raidGold(c.name).earned, 0);
+
+  if (!ready) return <div className="text-gray-400">불러오는 중...</div>;
 
   return (
     <div>
@@ -176,9 +202,18 @@ export default function HomeworkPage() {
           일일 리셋까지 <span className="text-amber-300">{resetIn}</span>
         </span>
       </div>
-      <p className="mb-6 text-sm text-gray-400">
+      <p className="mb-4 text-sm text-gray-400">
         일일 숙제는 매일 06시, 주간 숙제는 수요일 06시에 자동 초기화됩니다.
       </p>
+
+      {chars.length > 0 && (
+        <div className="mb-4 inline-flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm">
+          <span className="text-gray-300">이번 주 예상 골드 수익</span>
+          <span className="font-mono font-bold text-amber-300">
+            {totalGold.toLocaleString()} G
+          </span>
+        </div>
+      )}
 
       {/* 캐릭터 추가 */}
       <div className="mb-6 rounded-lg border border-white/10 bg-[#1a1d29] p-4">
@@ -212,69 +247,35 @@ export default function HomeworkPage() {
           캐릭터를 추가해 숙제를 관리하세요.
         </div>
       ) : (
-        <div className="space-y-4">
-          {chars.map((c) => {
-            const p = charProgress(c.name);
-            return (
-              <div
-                key={c.name}
-                className="rounded-xl border border-white/10 bg-[#1a1d29] p-4"
-              >
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <span className="font-semibold">{c.name}</span>
-                    {c.itemLevel && (
-                      <span className="ml-2 font-mono text-sm text-amber-300">
-                        {c.itemLevel}
-                      </span>
-                    )}
-                    {c.className && (
-                      <span className="ml-2 text-xs text-gray-500">
-                        {c.className}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`text-sm ${p.done === p.total ? "text-green-400" : "text-gray-400"}`}
-                    >
-                      {p.done}/{p.total}
-                    </span>
-                    <button
-                      onClick={() => removeChar(c.name)}
-                      className="text-xs text-gray-500 hover:text-red-400"
-                    >
-                      삭제
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <TaskGroup
-                    title="일일"
-                    tasks={DAILY_TASKS}
-                    done={(id) => isDone(daily, c.name, id)}
-                    onToggle={(id) => toggle(daily, setDaily, c.name, id)}
-                  />
-                  <TaskGroup
-                    title="주간"
-                    tasks={WEEKLY_TASKS}
-                    done={(id) => isDone(weekly, c.name, id)}
-                    onToggle={(id) => toggle(weekly, setWeekly, c.name, id)}
-                  />
-                </div>
-              </div>
-            );
-          })}
-
-          {/* 원정대 단위 주간 숙제 */}
-          <div className="rounded-xl border border-white/10 bg-[#1a1d29] p-4">
-            <TaskGroup
-              title="원정대 주간 공통"
-              tasks={ACCOUNT_WEEKLY_TASKS}
-              done={(id) => isDone(weekly, ACCOUNT_SCOPE, id)}
-              onToggle={(id) => toggle(weekly, setWeekly, ACCOUNT_SCOPE, id)}
+        <div className="grid gap-4 lg:grid-cols-2">
+          {chars.map((c) => (
+            <CharacterCard
+              key={c.name}
+              char={c}
+              gold={raidGold(c.name)}
+              isDailyDone={(id) => isDone(daily, c.name, id)}
+              isWeeklyDone={(id) => isDone(weekly, c.name, id)}
+              onToggleDaily={(id) => toggle(daily, setDaily, c.name, id)}
+              onToggleWeekly={(id) => toggle(weekly, setWeekly, c.name, id)}
+              onRemove={() => removeChar(c.name)}
             />
+          ))}
+
+          {/* 원정대 공통 */}
+          <div className="rounded-xl border border-white/10 bg-[#1a1d29] p-4 lg:col-span-2">
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+              원정대 주간 공통
+            </div>
+            <div className="flex flex-wrap gap-x-6">
+              {ACCOUNT_WEEKLY_TASKS.map((t) => (
+                <CheckRow
+                  key={t.id}
+                  label={t.label}
+                  checked={isDone(weekly, ACCOUNT_SCOPE, t.id)}
+                  onToggle={() => toggle(weekly, setWeekly, ACCOUNT_SCOPE, t.id)}
+                />
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -282,45 +283,181 @@ export default function HomeworkPage() {
   );
 }
 
-function TaskGroup({
-  title,
-  tasks,
-  done,
-  onToggle,
+function CharacterCard({
+  char,
+  gold,
+  isDailyDone,
+  isWeeklyDone,
+  onToggleDaily,
+  onToggleWeekly,
+  onRemove,
 }: {
-  title: string;
-  tasks: { id: string; label: string }[];
-  done: (id: string) => boolean;
-  onToggle: (id: string) => void;
+  char: CharInfo;
+  gold: { earned: number; total: number };
+  isDailyDone: (id: string) => boolean;
+  isWeeklyDone: (id: string) => boolean;
+  onToggleDaily: (id: string) => void;
+  onToggleWeekly: (id: string) => void;
+  onRemove: () => void;
 }) {
   return (
-    <div>
-      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-        {title}
+    <div className="overflow-hidden rounded-xl border border-white/10 bg-[#1a1d29]">
+      {/* 헤더: 이미지 + 정보 */}
+      <div className="relative flex items-center gap-3 border-b border-white/10 bg-gradient-to-r from-[#22263a] to-[#1a1d29] p-3">
+        <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-black/40">
+          {char.image ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={char.image}
+              alt={char.name}
+              className="h-full w-full scale-[1.8] object-cover object-top"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-2xl text-gray-600">
+              👤
+            </div>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="truncate font-semibold">{char.name}</span>
+            {char.className && (
+              <span className="shrink-0 text-xs text-gray-400">{char.className}</span>
+            )}
+          </div>
+          {char.itemLevel && (
+            <div className="font-mono text-sm text-amber-300">Lv. {char.itemLevel}</div>
+          )}
+        </div>
+        <div className="text-right">
+          <div className="font-mono text-sm font-bold text-amber-300">
+            {gold.earned.toLocaleString()}
+            <span className="text-gray-500"> / {gold.total.toLocaleString()} G</span>
+          </div>
+          <button
+            onClick={onRemove}
+            className="text-xs text-gray-500 hover:text-red-400"
+          >
+            삭제
+          </button>
+        </div>
       </div>
-      <div className="space-y-1.5">
-        {tasks.map((t) => {
-          const checked = done(t.id);
-          return (
-            <label
-              key={t.id}
-              className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-white/5"
-            >
-              <input
-                type="checkbox"
-                checked={checked}
-                onChange={() => onToggle(t.id)}
-                className="h-4 w-4 accent-amber-500"
+
+      <div className="space-y-3 p-3">
+        {/* 일일 */}
+        <div>
+          <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            일일 숙제
+          </div>
+          <div className="flex flex-wrap gap-x-5">
+            {DAILY_TASKS.map((t) => (
+              <CheckRow
+                key={t.id}
+                label={t.label}
+                checked={isDailyDone(t.id)}
+                onToggle={() => onToggleDaily(t.id)}
               />
-              <span
-                className={`text-sm ${checked ? "text-gray-500 line-through" : "text-gray-200"}`}
-              >
-                {t.label}
-              </span>
-            </label>
-          );
-        })}
+            ))}
+          </div>
+        </div>
+
+        {/* 주간 레이드 */}
+        <div>
+          <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            주간 레이드
+          </div>
+          <div className="space-y-2">
+            {RAIDS.map((raid) => {
+              const earned = raid.gates.reduce(
+                (s, _g, i) => s + (isWeeklyDone(gateTaskId(raid.id, i)) ? raid.gates[i].gold : 0),
+                0,
+              );
+              const total = raid.gates.reduce((s, g) => s + g.gold, 0);
+              const allDone = raid.gates.every((_g, i) =>
+                isWeeklyDone(gateTaskId(raid.id, i)),
+              );
+              return (
+                <div
+                  key={raid.id}
+                  className={`rounded-lg border p-2.5 transition ${
+                    allDone
+                      ? "border-white/5 bg-black/30 opacity-50"
+                      : "border-white/10 bg-[#11141d]"
+                  }`}
+                >
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="text-sm font-medium">{raid.name}</span>
+                    <span className="font-mono text-xs text-amber-300">
+                      {earned.toLocaleString()} / {total.toLocaleString()} G
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {raid.gates.map((g, i) => {
+                      const done = isWeeklyDone(gateTaskId(raid.id, i));
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => onToggleWeekly(gateTaskId(raid.id, i))}
+                          className={`flex-1 rounded-md px-2 py-1.5 text-center text-xs transition ${
+                            done
+                              ? "bg-amber-500 font-semibold text-black"
+                              : "bg-white/5 text-gray-300 hover:bg-white/10"
+                          }`}
+                        >
+                          <div>{g.label}</div>
+                          <div
+                            className={done ? "text-black/70" : "text-gray-500"}
+                          >
+                            {g.gold.toLocaleString()}G
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 기타 주간 */}
+        <div className="flex flex-wrap gap-x-5 border-t border-white/5 pt-2">
+          {WEEKLY_TASKS.map((t) => (
+            <CheckRow
+              key={t.id}
+              label={t.label}
+              checked={isWeeklyDone(t.id)}
+              onToggle={() => onToggleWeekly(t.id)}
+            />
+          ))}
+        </div>
       </div>
     </div>
+  );
+}
+
+function CheckRow({
+  label,
+  checked,
+  onToggle,
+}: {
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2 py-1">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        className="h-4 w-4 accent-amber-500"
+      />
+      <span
+        className={`text-sm ${checked ? "text-gray-500 line-through" : "text-gray-200"}`}
+      >
+        {label}
+      </span>
+    </label>
   );
 }

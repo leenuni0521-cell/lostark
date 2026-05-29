@@ -77,6 +77,11 @@ export function getSiblings(name: string) {
   return lostarkGet<Sibling[]>(`/characters/${encode(name)}/siblings`);
 }
 
+/** 캐릭터 프로필만 (이미지/아이템레벨 등) */
+export function getProfile(name: string) {
+  return lostarkGet<ArmoryProfile>(`/armories/characters/${encode(name)}/profiles`);
+}
+
 // ---- 응답 타입 (필요한 필드만) ----
 
 export interface Sibling {

@@ -12,11 +12,8 @@ export const DAILY_TASKS: TaskDef[] = [
   { id: "epona", label: "일일 에포나 의뢰" },
 ];
 
-// 캐릭터별 주간 숙제 (레이드 등)
+// 캐릭터별 주간 숙제 (레이드는 lib/raids.ts 에서 별도 관리)
 export const WEEKLY_TASKS: TaskDef[] = [
-  { id: "raid1", label: "레이드 1관문" },
-  { id: "raid2", label: "레이드 2관문" },
-  { id: "raid3", label: "레이드 3관문" },
   { id: "guardian_weekly", label: "주간 가디언" },
   { id: "una", label: "주간 에포나 의뢰" },
 ];
