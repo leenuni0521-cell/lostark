@@ -35,6 +35,16 @@ npm run build    # 프로덕션 빌드
 npm run start    # 프로덕션 실행
 ```
 
+## Netlify 배포
+
+1. Netlify에서 이 저장소를 연결하면 `netlify.toml` 설정에 따라 자동 빌드됩니다.
+2. **Site settings → Environment variables** 에 API 키를 등록합니다:
+   - Key: `LOSTARK_API_KEY`
+   - Value: 개발자 포털에서 발급받은 토큰
+3. 저장 후 재배포(Trigger deploy)하면 적용됩니다.
+
+> 환경변수는 Netlify 대시보드에만 저장하고 코드/저장소에는 절대 커밋하지 마세요.
+
 ## 기술 스택
 
 - Next.js 15 (App Router) · React 19 · TypeScript · Tailwind CSS v4

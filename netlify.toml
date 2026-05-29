@@ -1,0 +1,7 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+# Next.js (App Router) 공식 런타임. Netlify가 자동 설치합니다.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
