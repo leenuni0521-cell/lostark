@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0f1117;
+  --card: #1a1d29;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: #e6e8ef;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 등급별 색상 (로스트아크 아이템 등급) */
+.grade-에스더 { color: #3bc7b8; }
+.grade-고대 { color: #e3c441; }
+.grade-유물 { color: #f9591f; }
+.grade-전설 { color: #f1a911; }
+.grade-영웅 { color: #b14cf3; }
+.grade-희귀 { color: #3699d8; }
+.grade-고급 { color: #9bcf45; }
