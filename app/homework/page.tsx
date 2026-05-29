@@ -134,6 +134,23 @@ export default function HomeworkPage() {
     if (ready) localStorage.setItem(RAIDSEL_KEY, JSON.stringify(raidSel));
   }, [raidSel, ready]);
 
+  // 이미지가 없는 캐릭터는 로드 시 프로필을 다시 불러와 채운다 (예전 저장분 보정)
+  useEffect(() => {
+    if (!ready) return;
+    const missing = chars.filter((c) => !c.image).map((c) => c.name);
+    if (missing.length === 0) return;
+    fetchProfiles(missing).then((profiles) => {
+      if (profiles.size === 0) return;
+      setChars((prev) =>
+        prev.map((c) => {
+          const p = profiles.get(c.name);
+          return p && p.image ? { ...c, ...p } : c;
+        }),
+      );
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
   async function addManual() {
     const name = input.trim();
     if (!name) return;
@@ -308,7 +325,7 @@ export default function HomeworkPage() {
           캐릭터를 추가해 숙제를 관리하세요.
         </div>
       ) : (
-        <div className="grid items-start gap-4 lg:grid-cols-2">
+        <div className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {chars.map((c) => (
             <CharacterCard
               key={c.name}
@@ -326,7 +343,7 @@ export default function HomeworkPage() {
             />
           ))}
 
-          <div className="rounded-xl border border-white/10 bg-[#1a1d29] p-4 lg:col-span-2">
+          <div className="rounded-xl border border-white/10 bg-[#1a1d29] p-4 sm:col-span-2 lg:col-span-3">
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
               원정대 주간 공통
             </div>
@@ -386,54 +403,51 @@ function CharacterCard({
   return (
     <div className="overflow-hidden rounded-xl border border-white/10 bg-[#1a1d29]">
       {/* 헤더: 캐릭터 이미지 배경 */}
-      <div className="relative h-28 overflow-hidden">
+      <div className="relative h-[72px] overflow-hidden">
         {char.image ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={char.image}
             alt={char.name}
-            className="absolute inset-0 h-full w-full object-cover object-[center_25%]"
+            className="absolute inset-0 h-full w-full object-cover object-[center_22%]"
           />
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-[#2a2f45] to-[#1a1d29]" />
         )}
         <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/55 to-black/25" />
-        <div className="relative flex h-full flex-col justify-center p-4">
-          <div className="text-xs text-gray-300">
+        <div className="relative flex h-full flex-col justify-center px-3">
+          <div className="text-[11px] leading-tight text-gray-300">
             {char.server ? `@${char.server} ` : ""}
             {char.className}
           </div>
-          <div className="text-lg font-bold text-white drop-shadow">{char.name}</div>
+          <div className="text-base font-bold leading-tight text-white drop-shadow">
+            {char.name}
+          </div>
           {char.itemLevel && (
-            <div className="font-mono text-sm text-amber-300">Lv. {char.itemLevel}</div>
-          )}
-          {char.combatPower && (
-            <div className="mt-0.5 inline-block w-fit rounded bg-orange-500/80 px-1.5 py-0.5 text-[11px] font-semibold text-white">
-              전투력 {char.combatPower}
-            </div>
+            <div className="font-mono text-xs text-amber-300">Lv. {char.itemLevel}</div>
           )}
         </div>
-        <div className="absolute right-3 top-3 text-right">
-          <div className="font-mono text-sm font-bold text-amber-300 drop-shadow">
+        <div className="absolute right-2.5 top-2 text-right">
+          <div className="font-mono text-xs font-bold text-amber-300 drop-shadow">
             {gold.earned.toLocaleString()}
             <span className="text-gray-300"> / {gold.total.toLocaleString()} G</span>
           </div>
           <button
             onClick={onRemove}
-            className="text-xs text-gray-300 hover:text-red-400"
+            className="text-[11px] text-gray-300 hover:text-red-400"
           >
             삭제
           </button>
         </div>
       </div>
 
-      <div className="space-y-3 p-3">
+      <div className="space-y-2.5 p-2.5">
         {/* 일일 */}
         <div>
           <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
             일일 숙제
           </div>
-          <div className="flex flex-wrap gap-x-5">
+          <div className="flex flex-wrap gap-x-4">
             {DAILY_TASKS.map((t) => (
               <CheckRow
                 key={t.id}
@@ -514,13 +528,13 @@ function CharacterCard({
               return (
                 <div
                   key={raid.id}
-                  className={`rounded-lg border p-2.5 transition ${
+                  className={`rounded-lg border p-2 transition ${
                     allDone
                       ? "border-white/5 bg-black/30 opacity-50"
                       : "border-white/10 bg-[#11141d]"
                   }`}
                 >
-                  <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-2">
                       <span className="truncate text-sm font-medium">{raid.name}</span>
                       {raid.difficulties.length > 1 && (
@@ -552,7 +566,7 @@ function CharacterCard({
                         <button
                           key={i}
                           onClick={() => onToggleWeekly(gateTaskId(raid.id, diff.id, i))}
-                          className={`flex-1 rounded-md px-2 py-1.5 text-center text-xs transition ${
+                          className={`flex-1 rounded-md px-1.5 py-1 text-center text-[11px] leading-tight transition ${
                             done
                               ? "bg-amber-500 font-semibold text-black"
                               : "bg-white/5 text-gray-300 hover:bg-white/10"

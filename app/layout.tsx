@@ -18,7 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ko">
       <body className="min-h-screen">
         <header className="border-b border-white/10 bg-[#141722] sticky top-0 z-10">
-          <div className="mx-auto flex max-w-5xl items-center gap-6 px-4 py-3">
+          <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3">
             <Link href="/" className="text-lg font-bold text-amber-400">
               로아 숙제
             </Link>
@@ -35,8 +35,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </nav>
           </div>
         </header>
-        <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
-        <footer className="mx-auto max-w-5xl px-4 py-8 text-center text-xs text-gray-500">
+        <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
+        <footer className="mx-auto max-w-6xl px-4 py-8 text-center text-xs text-gray-500">
           데이터 출처: 로스트아크 공식 오픈 API · 비공식 팬 사이트
         </footer>
       </body>
