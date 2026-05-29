@@ -66,6 +66,8 @@ export const RAIDS: Raid[] = [
         { label: "1관문", gold: 13500 }, { label: "2관문", gold: 16500 } ] },
       { id: "stage2", label: "2단계", gates: [
         { label: "1관문", gold: 16000 }, { label: "2관문", gold: 24000 } ] },
+      { id: "stage3", label: "3단계", gates: [
+        { label: "1관문", gold: 20000 }, { label: "2관문", gold: 30000 } ] },
     ],
   },
   {
