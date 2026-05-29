@@ -31,12 +31,24 @@ interface PeriodState {
 
 // charName -> raidId -> difficultyId
 type RaidDiffMap = Record<string, Record<string, string>>;
+// charName -> 선택한 레이드 id 목록 (최대 3개)
+type RaidSelMap = Record<string, string[]>;
 
+const MAX_RAIDS = 3;
 const CHARS_KEY = "loa.chars";
 const DAILY_KEY = "loa.daily";
 const WEEKLY_KEY = "loa.weekly";
 const RAIDDIFF_KEY = "loa.raiddiff";
+const RAIDSEL_KEY = "loa.raidsel";
 const ACCOUNT_SCOPE = "__account__";
+
+/** 캐릭터 아이템 레벨로 추천 레이드 3개 (높은 티어 우선) */
+function defaultRaidIds(char: CharInfo): string[] {
+  const lvl = parseItemLevel(char.itemLevel);
+  const eligible = RAIDS.filter((r) => lvl === 0 || r.itemLevel <= lvl);
+  const pool = eligible.length >= MAX_RAIDS ? eligible : RAIDS;
+  return pool.slice(0, MAX_RAIDS).map((r) => r.id);
+}
 
 function loadPeriod(key: string, currentPeriod: string): PeriodState {
   if (typeof window === "undefined") return { period: currentPeriod, data: {} };
@@ -80,6 +92,7 @@ export default function HomeworkPage() {
   const [daily, setDaily] = useState<PeriodState>({ period: "", data: {} });
   const [weekly, setWeekly] = useState<PeriodState>({ period: "", data: {} });
   const [raidDiff, setRaidDiff] = useState<RaidDiffMap>({});
+  const [raidSel, setRaidSel] = useState<RaidSelMap>({});
   const [input, setInput] = useState("");
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +105,8 @@ export default function HomeworkPage() {
       if (rawChars) setChars(JSON.parse(rawChars));
       const rawDiff = localStorage.getItem(RAIDDIFF_KEY);
       if (rawDiff) setRaidDiff(JSON.parse(rawDiff));
+      const rawSel = localStorage.getItem(RAIDSEL_KEY);
+      if (rawSel) setRaidSel(JSON.parse(rawSel));
     } catch {
       /* ignore */
     }
@@ -115,6 +130,9 @@ export default function HomeworkPage() {
   useEffect(() => {
     if (ready) localStorage.setItem(RAIDDIFF_KEY, JSON.stringify(raidDiff));
   }, [raidDiff, ready]);
+  useEffect(() => {
+    if (ready) localStorage.setItem(RAIDSEL_KEY, JSON.stringify(raidSel));
+  }, [raidSel, ready]);
 
   async function addManual() {
     const name = input.trim();
@@ -200,21 +218,41 @@ export default function HomeworkPage() {
     }));
   }
 
-  // 캐릭터 주간 레이드 골드 (선택 난이도 기준, 체크된 관문 합산)
-  function raidGold(charName: string) {
+  // 캐릭터가 선택한 레이드 목록 (최대 3개)
+  function selectedRaids(char: CharInfo): Raid[] {
+    const ids = raidSel[char.name] ?? defaultRaidIds(char);
+    return ids
+      .map((id) => RAIDS.find((r) => r.id === id))
+      .filter((r): r is Raid => Boolean(r));
+  }
+
+  function toggleRaid(char: CharInfo, raidId: string) {
+    const current = raidSel[char.name] ?? defaultRaidIds(char);
+    let next: string[];
+    if (current.includes(raidId)) {
+      next = current.filter((id) => id !== raidId);
+    } else {
+      if (current.length >= MAX_RAIDS) return; // 최대 3개
+      next = [...current, raidId];
+    }
+    setRaidSel((prev) => ({ ...prev, [char.name]: next }));
+  }
+
+  // 캐릭터 주간 레이드 골드 (선택한 3개 레이드, 선택 난이도 기준)
+  function raidGold(char: CharInfo) {
     let earned = 0;
     let total = 0;
-    for (const raid of RAIDS) {
-      const diff = getDifficulty(raid, diffOf(charName, raid));
+    for (const raid of selectedRaids(char)) {
+      const diff = getDifficulty(raid, diffOf(char.name, raid));
       diff.gates.forEach((g, i) => {
         total += g.gold;
-        if (isDone(weekly, charName, gateTaskId(raid.id, diff.id, i))) earned += g.gold;
+        if (isDone(weekly, char.name, gateTaskId(raid.id, diff.id, i))) earned += g.gold;
       });
     }
     return { earned, total };
   }
 
-  const totalGold = chars.reduce((sum, c) => sum + raidGold(c.name).earned, 0);
+  const totalGold = chars.reduce((sum, c) => sum + raidGold(c).earned, 0);
 
   if (!ready) return <div className="text-gray-400">불러오는 중...</div>;
 
@@ -275,7 +313,9 @@ export default function HomeworkPage() {
             <CharacterCard
               key={c.name}
               char={c}
-              gold={raidGold(c.name)}
+              gold={raidGold(c)}
+              raids={selectedRaids(c)}
+              onToggleRaid={(raidId) => toggleRaid(c, raidId)}
               diffOf={(raid) => diffOf(c.name, raid)}
               onSetDiff={(raidId, diffId) => setDiff(c.name, raidId, diffId)}
               isDailyDone={(id) => isDone(daily, c.name, id)}
@@ -319,6 +359,8 @@ const DIFF_COLOR: Record<string, string> = {
 function CharacterCard({
   char,
   gold,
+  raids,
+  onToggleRaid,
   diffOf,
   onSetDiff,
   isDailyDone,
@@ -329,6 +371,8 @@ function CharacterCard({
 }: {
   char: CharInfo;
   gold: { earned: number; total: number };
+  raids: Raid[];
+  onToggleRaid: (raidId: string) => void;
   diffOf: (raid: Raid) => string;
   onSetDiff: (raidId: string, diffId: string) => void;
   isDailyDone: (id: string) => boolean;
@@ -337,6 +381,8 @@ function CharacterCard({
   onToggleWeekly: (id: string) => void;
   onRemove: () => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const selectedIds = new Set(raids.map((r) => r.id));
   return (
     <div className="overflow-hidden rounded-xl border border-white/10 bg-[#1a1d29]">
       {/* 헤더: 캐릭터 이미지 배경 */}
@@ -401,11 +447,59 @@ function CharacterCard({
 
         {/* 주간 레이드 */}
         <div>
-          <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            주간 레이드
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              주간 레이드 ({raids.length}/{MAX_RAIDS})
+            </span>
+            <button
+              onClick={() => setEditing((v) => !v)}
+              className={`rounded px-2 py-0.5 text-xs transition ${
+                editing
+                  ? "bg-amber-500 font-semibold text-black"
+                  : "border border-white/15 text-gray-300 hover:bg-white/5"
+              }`}
+            >
+              {editing ? "완료" : "레이드 편집"}
+            </button>
           </div>
+
+          {editing && (
+            <div className="mb-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-2">
+              <p className="mb-1.5 text-xs text-gray-400">
+                레이드를 최대 {MAX_RAIDS}개까지 선택하세요.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {RAIDS.map((r) => {
+                  const on = selectedIds.has(r.id);
+                  const full = !on && selectedIds.size >= MAX_RAIDS;
+                  return (
+                    <button
+                      key={r.id}
+                      onClick={() => onToggleRaid(r.id)}
+                      disabled={full}
+                      className={`rounded-md px-2 py-1 text-xs transition ${
+                        on
+                          ? "bg-amber-500 font-semibold text-black"
+                          : full
+                            ? "cursor-not-allowed bg-white/5 text-gray-600"
+                            : "bg-white/5 text-gray-300 hover:bg-white/10"
+                      }`}
+                    >
+                      {r.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {raids.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-white/15 px-3 py-4 text-center text-xs text-gray-500">
+              &quot;레이드 편집&quot;에서 레이드를 선택하세요.
+            </p>
+          ) : (
           <div className="space-y-2">
-            {RAIDS.map((raid) => {
+            {raids.map((raid) => {
               const diffId = diffOf(raid);
               const diff = getDifficulty(raid, diffId);
               const earned = diff.gates.reduce(
@@ -476,6 +570,7 @@ function CharacterCard({
               );
             })}
           </div>
+          )}
         </div>
 
         {/* 기타 주간 */}
