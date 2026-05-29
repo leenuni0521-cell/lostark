@@ -64,7 +64,11 @@ export default async function CharacterPage({
           )}
 
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
-            <Info label="아이템 레벨" value={profile.ItemMaxLevel} highlight />
+            <Info
+              label="아이템 레벨"
+              value={profile.ItemMaxLevel || profile.ItemAvgLevel || "-"}
+              highlight
+            />
             <Info label="전투 레벨" value={`Lv.${profile.CharacterLevel}`} />
             <Info label="원정대 레벨" value={`Lv.${profile.ExpeditionLevel}`} />
             {profile.GuildName && <Info label="길드" value={profile.GuildName} />}
