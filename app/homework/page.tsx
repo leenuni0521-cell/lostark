@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Sibling } from "@/lib/lostark";
+import { parseItemLevel, type Sibling } from "@/lib/lostark";
 import {
   DAILY_TASKS,
   WEEKLY_TASKS,
@@ -107,11 +107,10 @@ export default function HomeworkPage() {
       const res = await fetch(`/api/siblings/${encodeURIComponent(q)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "조회 실패");
-      const sorted = (data as Sibling[]).slice().sort(
-        (a, b) =>
-          parseFloat(b.ItemMaxLevel.replace(/,/g, "")) -
-          parseFloat(a.ItemMaxLevel.replace(/,/g, "")),
-      );
+      const list: Sibling[] = Array.isArray(data) ? data : [];
+      const sorted = list
+        .slice()
+        .sort((a, b) => parseItemLevel(b.ItemMaxLevel) - parseItemLevel(a.ItemMaxLevel));
       const imported: CharInfo[] = sorted.map((c) => ({
         name: c.CharacterName,
         server: c.ServerName,

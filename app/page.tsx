@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
-import type { Sibling } from "@/lib/lostark";
+import { parseItemLevel, type Sibling } from "@/lib/lostark";
 
 export default function HomePage() {
   const [name, setName] = useState("");
@@ -22,12 +22,12 @@ export default function HomePage() {
       const res = await fetch(`/api/siblings/${encodeURIComponent(q)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "조회 실패");
+      // 응답이 배열이 아닐 경우 방어
+      const list: Sibling[] = Array.isArray(data) ? data : [];
       // 아이템 레벨 내림차순 정렬
-      const sorted = (data as Sibling[]).slice().sort(
-        (a, b) =>
-          parseFloat(b.ItemMaxLevel.replace(/,/g, "")) -
-          parseFloat(a.ItemMaxLevel.replace(/,/g, "")),
-      );
+      const sorted = list
+        .slice()
+        .sort((a, b) => parseItemLevel(b.ItemMaxLevel) - parseItemLevel(a.ItemMaxLevel));
       setSiblings(sorted);
       setSearched(q);
     } catch (err) {
@@ -116,7 +116,7 @@ export default function HomePage() {
                       {c.CharacterClassName}
                     </td>
                     <td className="px-4 py-2.5 text-right font-mono text-amber-300">
-                      {c.ItemMaxLevel}
+                      {c.ItemMaxLevel ?? "-"}
                     </td>
                   </tr>
                 ))}

@@ -60,6 +60,13 @@ export async function lostarkGet<T>(path: string): Promise<T> {
 
 const encode = (name: string) => encodeURIComponent(name.trim());
 
+/** "1,680.00" 같은 아이템 레벨 문자열을 숫자로 안전하게 변환 (없으면 0) */
+export function parseItemLevel(value?: string | null): number {
+  if (!value) return 0;
+  const n = parseFloat(value.replace(/,/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
 /** 캐릭터 전투정보실 전체 (프로필/장비/스킬 등) */
 export function getArmory(name: string) {
   return lostarkGet<ArmoryFull>(`/armories/characters/${encode(name)}`);
